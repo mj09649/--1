@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>혜화여자고등학교 학교 생활 도우미</title>
+<title>학교 생활 도우미</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700;900&display=swap" rel="stylesheet">
@@ -694,19 +694,6 @@
     border-top:1px dashed var(--line);
   }
 
-  /* ---------- NEIS 연동 상태 배너 ---------- */
-  .neis-banner{
-    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-    border-radius:12px; padding:10px 14px; margin-bottom:16px; font-size:13px;
-  }
-  .neis-banner.loading{ background: color-mix(in srgb, var(--mustard) 18%, var(--paper-2)); color:var(--ink); }
-  .neis-banner.success{ background: color-mix(in srgb, var(--pine) 14%, var(--paper-2)); color:var(--pine-deep); }
-  .neis-banner.error{ background: color-mix(in srgb, #C4534A 16%, var(--paper-2)); color:#C4534A; }
-  .neis-banner button{
-    font-family:inherit; font-size:12px; font-weight:700; cursor:pointer;
-    border:1px solid currentColor; background:none; color:inherit; border-radius:999px; padding:4px 12px;
-  }
-
   /* ---------- 로그인/로그아웃 상태 ---------- */
   body.logged-out .sidebar{ display:none; }
   body.logged-out .topbar{ display:none; }
@@ -826,7 +813,7 @@
   <nav class="sidebar" aria-label="주요 메뉴">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">학</div>
-      <div class="brand-name">혜화여자고등학교</div>
+      <div class="brand-name">학교 생활 도우미</div>
     </div>
     <ul class="nav-list" id="navListDesktop"></ul>
   </nav>
@@ -837,7 +824,7 @@
     <div class="topbar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">학</div>
-        <div class="brand-name">혜화여자고등학교</div>
+        <div class="brand-name">학교 생활 도우미</div>
       </div>
       <button class="hamburger" aria-label="메뉴 열기" onclick="toggleMobileMenu(true)"><span aria-hidden="true"></span></button>
     </div>
@@ -845,12 +832,10 @@
     <main class="content" id="mainContent" tabindex="-1">
       <div class="wrap-inner">
 
-        <div id="neisStatusBanner" class="neis-banner" role="status" aria-live="polite" style="display:none;"></div>
-
         <!-- 홈 -->
         <section id="home" class="view">
           <div class="hero">
-            <h1>혜화여자고등학교 학교 생활 도우미</h1>
+            <h1>학교 생활 도우미</h1>
             <p class="tagline">학교생활에 필요한 정보를 한곳에서</p>
           </div>
 
@@ -1090,6 +1075,55 @@
   ];
 
   /* =========================================================
+     나이스(NEIS) 오픈API 연동
+     ---------------------------------------------------------
+     혜화여자고등학교(서울특별시교육청) 실제 급식/학사일정/시간표를
+     나이스 오픈API에서 받아와 MEAL_DATA / SCHOOL_EVENTS / TIMETABLE_STORE
+     캐시를 채운다. 화면을 그리는 기존 함수들은 이 캐시만 동기적으로
+     읽으므로 그대로 두고, ensureXxx() 함수들이 필요한 시점에 데이터를
+     받아와 캐시를 채운 뒤 현재 열려 있는 화면을 다시 그려준다.
+     ========================================================= */
+  var NEIS_CONFIG = {
+    KEY: '72812e02abd844f693c52fdb652e0f22',
+    ATPT_OFCDC_SC_CODE: 'B10',
+    SD_SCHUL_CODE: '7010116',
+    SCHOOL_NAME: '혜화여자고등학교'
+  };
+
+  function neisYmd(dateStr){ return dateStr.replace(/-/g, ''); }
+  function ymdToDateStr(ymd){ return ymd.slice(0,4)+'-'+ymd.slice(4,6)+'-'+ymd.slice(6,8); }
+
+  async function neisRequest(endpoint, params){
+    var qs = 'KEY='+encodeURIComponent(NEIS_CONFIG.KEY)+'&Type=json&pIndex=1&pSize=1000';
+    Object.keys(params).forEach(function(k){ qs += '&'+k+'='+encodeURIComponent(params[k]); });
+    try{
+      var res = await fetch('https://open.neis.go.kr/hub/'+endpoint+'?'+qs);
+      var data = await res.json();
+      var root = data[endpoint];
+      if(Array.isArray(root) && root[1] && root[1].row) return root[1].row;
+      return [];
+    }catch(e){
+      console.error('나이스 API 호출 실패: '+endpoint, e);
+      return [];
+    }
+  }
+
+  function isViewActive(id){
+    var el = document.getElementById(id);
+    return !!(el && el.classList.contains('active'));
+  }
+
+  function currentAcademicYear(){
+    var d = new Date(), y = d.getFullYear(), m = d.getMonth()+1;
+    // 신학년도는 3월에 시작하므로 1~2월은 이전 학년도 데이터로 조회한다.
+    return (m <= 2) ? (y-1) : y;
+  }
+  function currentSemester(){
+    var m = new Date().getMonth()+1;
+    return (m >= 3 && m <= 8) ? 1 : 2;
+  }
+
+  /* =========================================================
      계정 / 인증
      ---------------------------------------------------------
      비밀번호는 절대 평문으로 저장하지 않는다. 아래 USERS는
@@ -1278,7 +1312,7 @@
     if(announcer){ announcer.textContent = (PAGE_NAMES[id] || id)+' 화면으로 이동했습니다.'; }
     if(id === 'schedule'){ renderCalendar(); renderExamScheduleList(); }
     if(id === 'meal'){ initMealPage(); }
-    if(id === 'timetable'){ renderTimetablePage(); neisLoadTimetable(ttState.grade, ttState.cls); }
+    if(id === 'timetable'){ renderTimetablePage(); }
     if(id === 'exam'){ renderExamList(); }
     if(id === 'notice'){ renderNoticeList(); }
     if(id === 'ai'){ initChatIfNeeded(); renderFaqBrowseList(); }
@@ -1292,42 +1326,80 @@
   /* =========================================================
      시간표 데이터 구조
      ---------------------------------------------------------
-     실제로는 학년/반별 시간표를 서버에서 받아오면 됨.
-     여기서는 학년별 과목 풀을 정해두고 학년·반·요일 조합으로
-     결정적으로 생성한 예시 데이터를 사용.
-     getTimetable(grade, cls) -> { mon:[7과목], tue:[...], ... }
+     혜화여자고등학교의 실제 이번 주 시간표를 나이스 오픈API(hisTimetable)
+     에서 학년/반별로 받아온다. getTimetable(grade, cls)는 캐시에 있으면
+     즉시 반환하고, 없으면 ensureTimetable()로 조회를 시작한 뒤 그동안
+     보여줄 임시값을 반환한다. 데이터가 도착하면 열려 있는 화면을 다시 그린다.
+     getTimetable(grade, cls) -> { mon:[N과목], tue:[...], ... }
      ========================================================= */
-  var SUBJECT_POOLS = {
-    1: ['국어','수학','영어','통합사회','통합과학','체육','음악','미술','정보','한문','창체'],
-    2: ['국어','수학','영어','물리학','화학','생명과학','지구과학','한국사','체육','진로'],
-    3: ['국어','수학','영어','사회탐구','과학탐구','체육','진로','자율','제2외국어']
-  };
   var DAY_KEYS = ['mon','tue','wed','thu','fri'];
   var DAY_LABELS = ['월','화','수','목','금'];
   var PERIODS = 7;
 
-  function generateDefaultTimetable(grade, cls){
-    var pool = SUBJECT_POOLS[grade] || SUBJECT_POOLS[1];
-    var classOffset = (cls - 1) * 2;
+  var TIMETABLE_STORE = {};
+  var ttLoading = {};
+  function ttKey(grade, cls){ return grade+'-'+cls; }
+
+  function buildPlaceholderTimetable(label){
     var tt = {};
-    DAY_KEYS.forEach(function(dayKey, dayIdx){
-      var arr = [];
-      for(var p = 0; p < PERIODS; p++){
-        var idx = (classOffset + dayIdx * 2 + p) % pool.length;
-        arr.push(pool[idx]);
-      }
-      tt[dayKey] = arr;
-    });
-    tt.source = '학교 관리자 등록';
-    tt.updatedAt = '2026-09-01';
+    DAY_KEYS.forEach(function(dk){ tt[dk] = new Array(PERIODS).fill(label); });
+    tt.source = '나이스(NEIS) 시간표 - '+NEIS_CONFIG.SCHOOL_NAME;
+    tt.updatedAt = null;
     return tt;
   }
 
-  var TIMETABLE_STORE = {};
-  function ttKey(grade, cls){ return grade+'-'+cls; }
+  function onTimetableDataLoaded(){
+    if(isViewActive('timetable')) renderTimetablePage();
+    if(isViewActive('home')) renderHomeTodayWidget();
+    if(isViewActive('admin') && adminActiveTab === 'timetable') renderAdminPanel();
+  }
+
+  async function ensureTimetable(grade, cls){
+    var key = ttKey(grade, cls);
+    if(TIMETABLE_STORE[key] || ttLoading[key]) return;
+    ttLoading[key] = true;
+    var week = getWeekDates(todayDateStr());
+    var rows = await neisRequest('hisTimetable', {
+      ATPT_OFCDC_SC_CODE: NEIS_CONFIG.ATPT_OFCDC_SC_CODE,
+      SD_SCHUL_CODE: NEIS_CONFIG.SD_SCHUL_CODE,
+      AY: currentAcademicYear(),
+      SEM: currentSemester(),
+      GRADE: grade,
+      CLASS_NM: cls,
+      TI_FROM_YMD: neisYmd(week[0]),
+      TI_TO_YMD: neisYmd(week[4])
+    });
+    ttLoading[key] = false;
+
+    if(!rows.length){
+      TIMETABLE_STORE[key] = buildPlaceholderTimetable('시간표 정보 없음');
+      onTimetableDataLoaded();
+      return;
+    }
+
+    var maxPeriod = rows.reduce(function(mx, r){ return Math.max(mx, parseInt(r.PERIO,10) || 0); }, PERIODS);
+    var tt = {};
+    DAY_KEYS.forEach(function(dk){ tt[dk] = new Array(maxPeriod).fill('-'); });
+    rows.forEach(function(row){
+      var idx = week.indexOf(ymdToDateStr(row.ALL_TI_YMD));
+      if(idx === -1) return;
+      var p = parseInt(row.PERIO,10) - 1;
+      if(p < 0 || p >= maxPeriod) return;
+      tt[DAY_KEYS[idx]][p] = row.ITRT_CNTNT;
+    });
+    tt.source = '나이스(NEIS) 시간표 - '+NEIS_CONFIG.SCHOOL_NAME;
+    tt.updatedAt = week[4];
+    TIMETABLE_STORE[key] = tt;
+    if(maxPeriod > PERIODS) PERIODS = maxPeriod;
+    onTimetableDataLoaded();
+  }
+
   function getTimetable(grade, cls){
     var key = ttKey(grade, cls);
-    if(!TIMETABLE_STORE[key]){ TIMETABLE_STORE[key] = generateDefaultTimetable(grade, cls); }
+    if(!TIMETABLE_STORE[key]){
+      ensureTimetable(grade, cls);
+      return buildPlaceholderTimetable('불러오는 중...');
+    }
     return TIMETABLE_STORE[key];
   }
   function saveTimetable(grade, cls, tt){
@@ -1436,7 +1508,6 @@
     saveTTState();
     renderTimetablePage();
     renderHomeTodayWidget();
-    neisLoadTimetable(ttState.grade, ttState.cls);
   }
 
   function todayDayIndex(){
@@ -1469,7 +1540,7 @@
     }
     html += '</tbody>';
     document.getElementById('ttTable').innerHTML = html;
-    document.getElementById('ttSourceNote').innerHTML = sourceNoteHtml(tt.updatedAt);
+    document.getElementById('ttSourceNote').innerHTML = sourceNoteHtml(tt.updatedAt, tt.source);
   }
 
   /* =========================================================
@@ -1536,7 +1607,6 @@
     saveTTState();
     renderExamList();
     renderHomeTodayWidget();
-    neisLoadTimetable(ttState.grade, ttState.cls);
   }
 
   function onExamSearchInput(){
@@ -1769,11 +1839,11 @@
      함께 기록해 화면과 AI 답변에 표시한다.
      ========================================================= */
   var SOURCE_LABEL = '학교 관리자 등록';
-  function sourceNoteHtml(updatedAt){
-    return '<p class="source-note">출처: '+SOURCE_LABEL+' · 최종 업데이트: '+(updatedAt || '-')+'</p>';
+  function sourceNoteHtml(updatedAt, label){
+    return '<p class="source-note">출처: '+(label || SOURCE_LABEL)+' · 최종 업데이트: '+(updatedAt || '-')+'</p>';
   }
-  function sourceNoteText(updatedAt){
-    return '\n\n출처: '+SOURCE_LABEL+' · 최종 업데이트: '+(updatedAt || '-');
+  function sourceNoteText(updatedAt, label){
+    return '\n\n출처: '+(label || SOURCE_LABEL)+' · 최종 업데이트: '+(updatedAt || '-');
   }
 
   /* =========================================================
@@ -1850,6 +1920,7 @@
   function adminGoTab(tabId){ adminActiveTab = tabId; renderAdminPanel(); }
 
   function adminDashboardHTML(){
+    ensureScheduleYear(new Date().getFullYear());
     var todayStr = todayDateStr();
     var upcomingEvents = SCHOOL_EVENTS.filter(function(e){ return e.date >= todayStr; })
       .sort(function(a,b){ return a.date < b.date ? -1 : 1; });
@@ -1982,6 +2053,7 @@
 
   /* ---- 학교 일정 관리 ---- */
   function adminScheduleHTML(){
+    ensureScheduleYear(new Date().getFullYear());
     var item = adminEditId.schedule ? SCHOOL_EVENTS.find(function(e){ return e.id === adminEditId.schedule; }) : null;
     var html = '<div class="admin-form"><h4>'+(item ? '일정 수정' : '새 일정 추가')+'</h4>';
     html += '<div class="form-row inline"><div><label>날짜</label><input id="adm_sch_date" type="date" value="'+(item ? item.date : todayDateStr())+'"></div>';
@@ -2238,6 +2310,7 @@
   /* ---- 급식 정보 관리 ---- */
   function adminMealHTML(){
     var ds = adminMealSelectedDate;
+    ensureMealRange(ds, ds);
     var data = MEAL_DATA[ds];
     var menuText = data ? data.menu.map(function(m){ return m.name + (m.allergy && m.allergy.length ? '|'+m.allergy.join(',') : ''); }).join('\n') : '';
     var html = '<div class="admin-form"><h4>급식 정보 관리</h4>';
@@ -2526,6 +2599,7 @@
   function answerMealQuery(scope){
     var ds = scope ? scope.start : todayDateStr();
     var label = scope ? scope.label : '오늘';
+    ensureMealRange(ds, scope ? scope.end : ds);
     var data = MEAL_DATA[ds];
     if(!data || !data.menu.length){
       return niceDateLabel(ds)+'('+label+')의 급식 정보가 등록되어 있지 않습니다.';
@@ -2533,7 +2607,7 @@
     var lines = data.menu.map(function(m){
       return '- '+m.name + (m.allergy && m.allergy.length ? ' ('+m.allergy.join('.')+')' : '');
     });
-    return niceDateLabel(ds)+'('+label+') 급식입니다.\n'+lines.join('\n') + sourceNoteText(data.updatedAt);
+    return niceDateLabel(ds)+'('+label+') 급식입니다.\n'+lines.join('\n') + sourceNoteText(data.updatedAt, data.source);
   }
 
   function answerTimetableQuery(scope){
@@ -2544,10 +2618,10 @@
       if(dow === 0 || dow === 6){ return niceDateLabel(scope.start)+'은 주말이라 시간표가 없습니다.'; }
       var dayKey = DAY_KEYS[dow-1];
       var lines = tt[dayKey].map(function(s,i){ return (i+1)+'교시 '+s; });
-      return grade+'학년 '+cls+'반 '+niceDateLabel(scope.start)+' 시간표입니다.\n'+lines.join('\n') + sourceNoteText(tt.updatedAt);
+      return grade+'학년 '+cls+'반 '+niceDateLabel(scope.start)+' 시간표입니다.\n'+lines.join('\n') + sourceNoteText(tt.updatedAt, tt.source);
     }
     var lines2 = DAY_KEYS.map(function(dk, i){ return DAY_LABELS[i]+'요일: '+tt[dk].join(', '); });
-    return grade+'학년 '+cls+'반 시간표입니다.\n'+lines2.join('\n') + sourceNoteText(tt.updatedAt);
+    return grade+'학년 '+cls+'반 시간표입니다.\n'+lines2.join('\n') + sourceNoteText(tt.updatedAt, tt.source);
   }
 
   function answerExamQuery(scope){
@@ -2572,6 +2646,8 @@
   }
 
   function answerScheduleQuery(scope, typeFilter){
+    ensureScheduleYear(new Date().getFullYear());
+    ensureScheduleYear(new Date().getFullYear()+1);
     var list = SCHOOL_EVENTS.slice();
     if(typeFilter){ list = list.filter(function(e){ return e.type === typeFilter; }); }
     if(scope){
@@ -2590,9 +2666,9 @@
       var t = EVENT_TYPES[e.type] || {label:'기타'};
       return '- '+e.date+' ['+t.label+'] '+e.title;
     });
-    // 목록에 포함된 일정 중 가장 최근에 등록/수정된 날짜를 대표로 안내한다.
-    var latestUpdate = list.reduce(function(acc, e){ return (!acc || e.updatedAt > acc) ? e.updatedAt : acc; }, null);
-    return scopeLabel+' '+kindLabel+'입니다.\n'+lines.join('\n') + sourceNoteText(latestUpdate);
+    // 목록에 포함된 일정 중 가장 최근에 등록/수정된 항목을 대표로 안내한다.
+    var latestEvent = list.reduce(function(acc, e){ return (!acc || e.updatedAt > acc.updatedAt) ? e : acc; }, null);
+    return scopeLabel+' '+kindLabel+'입니다.\n'+lines.join('\n') + sourceNoteText(latestEvent.updatedAt, latestEvent.source);
   }
 
   // 질문을 분석해 실제 데이터 조회로 답할 수 있으면 답변 문자열을,
@@ -2675,6 +2751,9 @@
   function collectSearchResults(query){
     var qLower = query.trim().toLowerCase();
     if(!qLower) return [];
+    ensureScheduleYear(new Date().getFullYear());
+    var searchWeek = getWeekDates(todayDateStr());
+    ensureMealRange(searchWeek[0], searchWeek[4]);
     var qTokens = qLower.split(/\s+/).filter(Boolean);
 
     function scoreText(text){
@@ -2796,12 +2875,13 @@
     }
     document.getElementById('settingsSaved').textContent = '저장되었습니다. 홈 화면과 시간표, 수행평가에 바로 반영됩니다.';
     renderHomeTodayWidget();
-    neisLoadTimetable(ttState.grade, ttState.cls);
   }
 
   function renderHomeTodayWidget(){
     var el = document.getElementById('todayTTWidget');
     var ds = todayDateStr();
+    ensureMealRange(ds, ds);
+    ensureScheduleYear(new Date().getFullYear());
     var changeLink = currentRole === 'student' ? ' <button class="tmc-change-link" onclick="goTo(\'settings\')">변경</button>' : '';
     var classTag = ttState.grade+'학년 '+ttState.cls+'반'+changeLink;
 
@@ -2881,8 +2961,8 @@
   /* =========================================================
      급식 데이터 구조
      ---------------------------------------------------------
-     실제 서비스에서는 나이스(NEIS) 급식 API 등으로 교체 가능.
-     MEAL_DATA: 'YYYY-MM-DD' -> { menu: [{ name, allergy:[번호,...] }] }
+     나이스(NEIS) 급식식단정보 API에서 혜화여자고등학교의 실제 급식을
+     받아와 채운다. MEAL_DATA: 'YYYY-MM-DD' -> { menu: [{ name, allergy:[번호,...] }] }
      ALLERGY_INFO: 식품위생법 표시대상 알레르기 유발물질 18번호 -> 이름
      ========================================================= */
   var ALLERGY_INFO = {
@@ -2891,29 +2971,46 @@
     13:'아황산류', 14:'호두', 15:'닭고기', 16:'쇠고기', 17:'오징어', 18:'조개류(굴·전복·홍합 포함)'
   };
 
-  var MEAL_DATA = {
-    '2026-09-14': { menu:[
-      {name:'잡곡밥', allergy:[]}, {name:'된장찌개', allergy:[5,6]}, {name:'제육볶음', allergy:[10,13]},
-      {name:'콩나물무침', allergy:[5]}, {name:'깍두기', allergy:[9]}, {name:'요구르트', allergy:[2]}
-    ]},
-    '2026-09-15': { menu:[
-      {name:'잡곡밥', allergy:[]}, {name:'순두부찌개', allergy:[5,9]}, {name:'고등어구이', allergy:[7]},
-      {name:'애호박볶음', allergy:[5]}, {name:'배추김치', allergy:[9]}, {name:'방울토마토', allergy:[12]}
-    ]},
-    '2026-09-16': { menu:[
-      {name:'쌀밥', allergy:[]}, {name:'김치찌개', allergy:[5,6,9]}, {name:'불고기', allergy:[6,16]},
-      {name:'시금치무침', allergy:[5]}, {name:'배추김치', allergy:[9]}, {name:'과일', allergy:[]}
-    ]},
-    '2026-09-17': { menu:[
-      {name:'카레라이스', allergy:[6]}, {name:'미역국', allergy:[9]}, {name:'치킨너겟', allergy:[1,6,15]},
-      {name:'브로콜리무침', allergy:[5]}, {name:'단무지', allergy:[]}, {name:'식혜', allergy:[]}
-    ]},
-    '2026-09-18': { menu:[
-      {name:'비빔밥', allergy:[5,6]}, {name:'계란국', allergy:[1]}, {name:'잡채', allergy:[5,6,10]},
-      {name:'오이생채', allergy:[]}, {name:'배추김치', allergy:[9]}, {name:'매실차', allergy:[]}
-    ]}
-  };
-  Object.keys(MEAL_DATA).forEach(function(ds){ MEAL_DATA[ds].source = '학교 관리자 등록'; MEAL_DATA[ds].updatedAt = '2026-09-01'; });
+  var MEAL_DATA = {};
+  var mealLoadingRanges = {};
+
+  var MEAL_SOURCE_LABEL = '나이스(NEIS) 급식 정보 - '+NEIS_CONFIG.SCHOOL_NAME;
+
+  function parseMealDish(ddishNm){
+    return ddishNm.split('<br/>').map(function(s){ return s.trim(); }).filter(Boolean).map(function(line){
+      var m = line.match(/^(.*?)\s*\(([\d.\s]+)\)\s*$/);
+      if(m){
+        var nums = m[2].split('.').map(function(s){ return parseInt(s.trim(),10); }).filter(function(n){ return !isNaN(n); });
+        return { name:m[1].trim(), allergy:nums };
+      }
+      return { name:line, allergy:[] };
+    });
+  }
+
+  function onMealDataLoaded(){
+    if(isViewActive('meal')) initMealPage();
+    if(isViewActive('home')) renderHomeTodayWidget();
+    if(isViewActive('admin') && adminActiveTab === 'meal') renderAdminPanel();
+  }
+
+  async function ensureMealRange(fromStr, toStr){
+    var rangeKey = fromStr+'_'+toStr;
+    if(mealLoadingRanges[rangeKey]) return;
+    mealLoadingRanges[rangeKey] = true;
+    var rows = await neisRequest('mealServiceDietInfo', {
+      ATPT_OFCDC_SC_CODE: NEIS_CONFIG.ATPT_OFCDC_SC_CODE,
+      SD_SCHUL_CODE: NEIS_CONFIG.SD_SCHUL_CODE,
+      MLSV_FROM_YMD: neisYmd(fromStr),
+      MLSV_TO_YMD: neisYmd(toStr)
+    });
+    rows.forEach(function(row){
+      var ds = ymdToDateStr(row.MLSV_YMD);
+      // 하루에 조식/중식/석식이 함께 나올 수 있는데, 학생 대상 화면이므로 중식(2)을 우선한다.
+      if(MEAL_DATA[ds] && MEAL_DATA[ds]._mealCode === '2' && row.MMEAL_SC_CODE !== '2') return;
+      MEAL_DATA[ds] = { menu: parseMealDish(row.DDISH_NM), source: MEAL_SOURCE_LABEL, updatedAt: ds, _mealCode: row.MMEAL_SC_CODE };
+    });
+    onMealDataLoaded();
+  }
 
   var mealState = { selected: null };
 
@@ -2925,6 +3022,8 @@
   function initMealPage(){
     if(!mealState.selected){ mealState.selected = todayDateStr(); }
     document.getElementById('mealDateInput').value = mealState.selected;
+    var week = getWeekDates(mealState.selected);
+    ensureMealRange(week[0], week[4]);
     renderMealCard(mealState.selected);
     renderWeekMeals(mealState.selected);
   }
@@ -2933,6 +3032,8 @@
     if(!dateStr) return;
     mealState.selected = dateStr;
     document.getElementById('mealDateInput').value = dateStr;
+    var week = getWeekDates(dateStr);
+    ensureMealRange(week[0], week[4]);
     renderMealCard(dateStr);
     renderWeekMeals(dateStr);
   }
@@ -2987,7 +3088,7 @@
     }
     html += '</div></div>';
 
-    html += sourceNoteHtml(data.updatedAt);
+    html += sourceNoteHtml(data.updatedAt, data.source);
 
     el.innerHTML = html;
   }
@@ -3027,9 +3128,10 @@
   /* =========================================================
      학교 일정 데이터 구조
      ---------------------------------------------------------
-     추후 교사가 관리자 페이지에서 이 배열을 CRUD 할 수 있도록
-     설계함. 실제 서비스에서는 이 배열 대신 서버 API 응답으로
-     대체하면 됨 (id 기준으로 추가/수정/삭제).
+     나이스(NEIS) 학사일정 API에서 혜화여자고등학교의 실제 학사일정을
+     연도 단위로 받아와 채운다. 교사는 관리자 페이지에서 이 배열에
+     직접 일정을 추가/수정/삭제할 수 있고, NEIS에서 받아온 일정과
+     같은 배열에 함께 담긴다 (id 기준으로 구분).
 
      EVENT_TYPES: 일정 유형과 표시 색상 정의
      SCHOOL_EVENTS: 개별 일정
@@ -3050,23 +3152,48 @@
     etc:      { label:'기타',     color:'#8B5FBF' }
   };
 
-  var SCHOOL_EVENTS = [
-    {
-      id:'e1', date:'2026-09-18', type:'exam', title:'2학기 중간고사',
-      items:[ {time:'1교시', text:'국어'}, {time:'2교시', text:'수학'} ]
-    },
-    { id:'e2', date:'2026-09-19', type:'exam', title:'2학기 중간고사 2일차',
-      items:[ {time:'1교시', text:'영어'}, {time:'2교시', text:'한국사'} ] },
-    { id:'e3', date:'2026-09-25', type:'event', title:'체육대회',
-      items:[ {time:'종일', text:'운동장에서 진행'} ] },
-    { id:'e4', date:'2026-09-11', type:'club', title:'동아리 발표회',
-      items:[ {time:'방과후', text:'강당'} ] },
-    { id:'e5', date:'2026-09-30', type:'holiday', title:'재량휴업일', items:[] },
-    { id:'e6', date:'2026-09-05', type:'etc', title:'교복 채촌', items:[ {time:'점심시간', text:'1층 로비'} ] }
-  ];
-  SCHOOL_EVENTS.forEach(function(ev){ ev.source = '학교 관리자 등록'; ev.updatedAt = '2026-09-01'; });
+  var SCHOOL_EVENTS = [];
+  var scheduleLoadedYears = {};
+  var SCHEDULE_SOURCE_LABEL = '나이스(NEIS) 학사일정 - '+NEIS_CONFIG.SCHOOL_NAME;
 
-  var calState = { year: 2026, month: 9, selected: null }; // month: 1-12
+  function classifyEventType(row){
+    var name = row.EVENT_NM || '';
+    if(row.SBTR_DD_SC_NM === '공휴일' || row.SBTR_DD_SC_NM === '휴업일') return 'holiday';
+    if(name.indexOf('방학') !== -1) return 'vacation';
+    if(name.indexOf('동아리') !== -1) return 'club';
+    if(name.indexOf('고사') !== -1 || name.indexOf('평가') !== -1 || name.indexOf('수능') !== -1 || name.indexOf('모의') !== -1) return 'exam';
+    return 'event';
+  }
+
+  function onScheduleDataLoaded(){
+    if(isViewActive('schedule')){ renderCalendar(); renderExamScheduleList(); }
+    if(isViewActive('home')) renderHomeTodayWidget();
+    if(isViewActive('admin') && (adminActiveTab === 'schedule' || adminActiveTab === 'dashboard')) renderAdminPanel();
+  }
+
+  async function ensureScheduleYear(year){
+    if(scheduleLoadedYears[year]) return;
+    scheduleLoadedYears[year] = true;
+    var rows = await neisRequest('SchoolSchedule', {
+      ATPT_OFCDC_SC_CODE: NEIS_CONFIG.ATPT_OFCDC_SC_CODE,
+      SD_SCHUL_CODE: NEIS_CONFIG.SD_SCHUL_CODE,
+      AA_FROM_YMD: year+'0101',
+      AA_TO_YMD: year+'1231'
+    });
+    rows.forEach(function(row, idx){
+      var id = 'neis-'+row.AA_YMD+'-'+idx;
+      if(SCHOOL_EVENTS.some(function(e){ return e.id === id; })) return;
+      SCHOOL_EVENTS.push({
+        id: id, date: ymdToDateStr(row.AA_YMD), type: classifyEventType(row), title: row.EVENT_NM,
+        items: row.EVENT_CNTNT ? [{ time:'', text: row.EVENT_CNTNT }] : [],
+        source: SCHEDULE_SOURCE_LABEL, updatedAt: ymdToDateStr(row.AA_YMD)
+      });
+    });
+    onScheduleDataLoaded();
+  }
+
+  var today0 = new Date();
+  var calState = { year: today0.getFullYear(), month: today0.getMonth()+1, selected: null }; // month: 1-12
 
   function pad2(n){ return n < 10 ? '0'+n : ''+n; }
 
@@ -3088,6 +3215,7 @@
 
   function renderCalendar(){
     renderLegend();
+    ensureScheduleYear(calState.year);
     var y = calState.year, m = calState.month;
     document.getElementById('calMonthLabel').textContent = y + '년 ' + m + '월';
 
@@ -3173,7 +3301,7 @@
         ev.items.forEach(function(it){ html += '<li>'+escapeHtml(it.time)+' '+escapeHtml(it.text)+'</li>'; });
         html += '</ul>';
       }
-      html += sourceNoteHtml(ev.updatedAt);
+      html += sourceNoteHtml(ev.updatedAt, ev.source);
       html += '</div>';
     });
     detail.innerHTML = html;
@@ -3193,6 +3321,9 @@
   function renderExamScheduleList(){
     var el = document.getElementById('examScheduleList');
     if(!el) return;
+    var thisYear = new Date().getFullYear();
+    ensureScheduleYear(thisYear);
+    ensureScheduleYear(thisYear+1);
     var list = SCHOOL_EVENTS.filter(function(e){ return e.type === 'exam'; })
       .map(function(e){ return { ev:e, diff: dDayInfo(e.date) }; });
 
@@ -3244,216 +3375,9 @@
     return false;
   }
 
-  /* =========================================================
-     나이스(NEIS) 교육정보 개방 API 연동
-     ---------------------------------------------------------
-     혜화여자고등학교의 실제 급식/학사일정/시간표를 나이스 오픈 API에서
-     가져와 기존 MEAL_DATA / SCHOOL_EVENTS / TIMETABLE_STORE에 그대로
-     채워 넣는다. 화면 렌더링 함수들은 전혀 손대지 않고, 데이터 원본만
-     "관리자가 입력한 예시 데이터"에서 "나이스 실시간 데이터"로 바뀐다.
-
-     ⚠️ 이 API 호출은 GitHub Pages 등 실제 배포된 사이트에서만 정상
-        동작한다. claude.ai 아티팩트 미리보기 안에서는 보안 정책상
-        외부 API 호출이 막혀 있어 실패할 수 있다 (그 경우 기존 예시
-        데이터가 그대로 유지된다).
-     ========================================================= */
-  var NEIS = {
-    key: '72812e02abd844f693c52fdb652e0f22',
-    schoolName: '혜화여자고등학교',
-    officeCode: null,
-    schoolCode: null,
-    status: 'idle', // idle | loading | success | error
-    message: '',
-    triedTimetable: {} // 이미 조회 시도한 '학년-반' 캐시 (중복 호출 방지)
-  };
-
-  function renderNeisStatus(){
-    var el = document.getElementById('neisStatusBanner');
-    if(!el) return;
-    if(NEIS.status === 'idle'){ el.style.display = 'none'; return; }
-    el.style.display = 'flex';
-    el.className = 'neis-banner ' + NEIS.status;
-    var icon = NEIS.status === 'loading' ? '⏳' : (NEIS.status === 'success' ? '✅' : '⚠️');
-    var html = '<span>'+icon+' '+escapeHtml(NEIS.message)+'</span>';
-    if(NEIS.status === 'error'){
-      html += '<button onclick="initNeisData()">다시 시도</button>';
-    }
-    el.innerHTML = html;
-  }
-
-  // 나이스 서버는 브라우저에서 직접 부르면 CORS로 막히는 경우가 많아,
-  // 공개 CORS 우회 프록시를 순서대로 시도한다. 하나가 막히거나 느려도
-  // 다음 프록시로 자동 전환한다.
-  var CORS_PROXIES = [
-    function(u){ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
-    function(u){ return 'https://corsproxy.io/?' + encodeURIComponent(u); }
-  ];
-
-  async function neisFetchJson(url){
-    var lastErr = null;
-    for(var i = 0; i < CORS_PROXIES.length; i++){
-      try{
-        var res = await fetch(CORS_PROXIES[i](url));
-        if(!res.ok){ throw new Error('NEIS 서버 응답 오류 ('+res.status+')'); }
-        var data = await res.json();
-        var firstKey = Object.keys(data)[0];
-        if(data[firstKey] && data[firstKey][0] && data[firstKey][0].RESULT && data[firstKey][0].RESULT.CODE !== 'INFO-000'){
-          throw new Error(data[firstKey][0].RESULT.MESSAGE || 'NEIS 조회 실패');
-        }
-        return data;
-      }catch(e){
-        lastErr = e;
-        // 다음 프록시로 계속 시도
-      }
-    }
-    throw lastErr || new Error('NEIS 조회 실패');
-  }
-
-  async function neisResolveSchool(){
-    var url = 'https://open.neis.go.kr/hub/schoolInfo?KEY='+NEIS.key+'&Type=json&pIndex=1&pSize=5&SCHUL_NM='+encodeURIComponent(NEIS.schoolName);
-    var data = await neisFetchJson(url);
-    var rows = data.schoolInfo && data.schoolInfo[1] && data.schoolInfo[1].row;
-    if(!rows || !rows.length){ throw new Error('학교 정보를 찾지 못했습니다'); }
-    NEIS.officeCode = rows[0].ATPT_OFCDC_SC_CODE;
-    NEIS.schoolCode = rows[0].SD_SCHUL_CODE;
-  }
-
-  // "치킨너겟(1.5.6)" 형태의 나이스 급식 항목 문자열을 이름/알레르기 번호로 분리
-  function parseNeisDish(raw){
-    var m = raw.trim().match(/^(.*?)(?:\(([\d.]+)\))?$/);
-    var name = (m && m[1] ? m[1] : raw).trim();
-    var allergy = (m && m[2]) ? m[2].split('.').map(function(n){ return parseInt(n,10); })
-      .filter(function(n){ return n >= 1 && n <= 18; }) : [];
-    return { name:name, allergy:allergy };
-  }
-
-  async function neisLoadMeals(){
-    var today = new Date();
-    var y = today.getFullYear(), m = today.getMonth()+1;
-    var from = y+''+pad2(m)+'01';
-    var lastDay = new Date(y, m, 0).getDate();
-    var to = y+''+pad2(m)+pad2(lastDay);
-    var url = 'https://open.neis.go.kr/hub/mealServiceDietInfo?KEY='+NEIS.key+'&Type=json&pIndex=1&pSize=100'+
-      '&ATPT_OFCDC_SC_CODE='+NEIS.officeCode+'&SD_SCHUL_CODE='+NEIS.schoolCode+
-      '&MLSV_FROM_YMD='+from+'&MLSV_TO_YMD='+to;
-    var data = await neisFetchJson(url);
-    var rows = data.mealServiceDietInfo && data.mealServiceDietInfo[1] && data.mealServiceDietInfo[1].row;
-    if(!rows) return;
-    rows.forEach(function(r){
-      if(r.MMEAL_SC_NM !== '중식') return; // 중식(점심)만 사용
-      var ymd = r.MLSV_YMD;
-      var dateStr = ymd.slice(0,4)+'-'+ymd.slice(4,6)+'-'+ymd.slice(6,8);
-      var menu = r.DDISH_NM.split(/<br\s*\/?>/i).map(parseNeisDish).filter(function(d){ return d.name; });
-      MEAL_DATA[dateStr] = { menu:menu, source:'나이스 교육정보 개방 API (NEIS)', updatedAt: todayDateStr() };
-    });
-  }
-
-  // 학사일정 항목 이름으로 대략적인 유형(시험/방학/휴업일/행사 등)을 추정
-  function guessEventType(name){
-    if(name.indexOf('고사') !== -1 || name.indexOf('시험') !== -1) return 'exam';
-    if(name.indexOf('방학') !== -1) return 'vacation';
-    if(name.indexOf('휴업') !== -1 || name.indexOf('공휴일') !== -1) return 'holiday';
-    if(name.indexOf('동아리') !== -1) return 'club';
-    return 'event';
-  }
-
-  async function neisLoadSchedule(){
-    var today = new Date();
-    var y = today.getFullYear(), m = today.getMonth()+1;
-    var from = y+''+pad2(m)+'01';
-    var lastDay = new Date(y, m, 0).getDate();
-    var to = y+''+pad2(m)+pad2(lastDay);
-    var url = 'https://open.neis.go.kr/hub/SchoolSchedule?KEY='+NEIS.key+'&Type=json&pIndex=1&pSize=100'+
-      '&ATPT_OFCDC_SC_CODE='+NEIS.officeCode+'&SD_SCHUL_CODE='+NEIS.schoolCode+
-      '&AA_FROM_YMD='+from+'&AA_TO_YMD='+to;
-    var data = await neisFetchJson(url);
-    var rows = data.SchoolSchedule && data.SchoolSchedule[1] && data.SchoolSchedule[1].row;
-    if(!rows) return;
-    // 이 API로 가져온 항목은 매번 새로 채워 넣는다 (같은 날짜 중복 누적 방지)
-    SCHOOL_EVENTS = SCHOOL_EVENTS.filter(function(e){ return e.source !== '나이스 교육정보 개방 API (NEIS)'; });
-    rows.forEach(function(r){
-      var ymd = r.AA_YMD;
-      var dateStr = ymd.slice(0,4)+'-'+ymd.slice(4,6)+'-'+ymd.slice(6,8);
-      SCHOOL_EVENTS.push({
-        id:'neis-'+ymd+'-'+Math.random().toString(36).slice(2,7),
-        date:dateStr, type:guessEventType(r.EVENT_NM || ''), title:r.EVENT_NM || '학사일정',
-        items:[], source:'나이스 교육정보 개방 API (NEIS)', updatedAt: todayDateStr()
-      });
-    });
-  }
-
-  // 특정 학년/반의 시간표를 나이스에서 조회해 TIMETABLE_STORE에 채운다 (필요할 때만 지연 호출)
-  async function neisLoadTimetable(grade, cls){
-    var key = grade+'-'+cls;
-    if(NEIS.triedTimetable[key]) return;
-    NEIS.triedTimetable[key] = true;
-    if(!NEIS.officeCode || !NEIS.schoolCode) return;
-
-    var weekDates = getWeekDates(todayDateStr()); // 이번 주 월~금
-    var from = weekDates[0].replace(/-/g,'');
-    var to = weekDates[4].replace(/-/g,'');
-    var ay = todayDateStr().slice(0,4);
-    var sem = (new Date().getMonth() + 1) >= 3 && (new Date().getMonth() + 1) <= 8 ? '1' : '2';
-
-    var url = 'https://open.neis.go.kr/hub/hisTimetable?KEY='+NEIS.key+'&Type=json&pIndex=1&pSize=100'+
-      '&ATPT_OFCDC_SC_CODE='+NEIS.officeCode+'&SD_SCHUL_CODE='+NEIS.schoolCode+
-      '&AY='+ay+'&SEM='+sem+'&GRADE='+grade+'&CLASS_NM='+cls+
-      '&TI_FROM_YMD='+from+'&TI_TO_YMD='+to;
-
-    try{
-      var data = await neisFetchJson(url);
-      var rows = data.hisTimetable && data.hisTimetable[1] && data.hisTimetable[1].row;
-      if(!rows || !rows.length) return;
-
-      var tt = { source:'나이스 교육정보 개방 API (NEIS)', updatedAt: todayDateStr() };
-      DAY_KEYS.forEach(function(dk){ tt[dk] = new Array(PERIODS).fill('-'); });
-
-      rows.forEach(function(r){
-        var ymd = r.ALL_TI_YMD;
-        var dateStr = ymd.slice(0,4)+'-'+ymd.slice(4,6)+'-'+ymd.slice(6,8);
-        var dayIdx = weekDates.indexOf(dateStr); // 0=월 ... 4=금
-        if(dayIdx === -1) return;
-        var period = parseInt(r.PERIO, 10) - 1;
-        if(period < 0 || period >= PERIODS) return;
-        tt[DAY_KEYS[dayIdx]][period] = (r.ITRT_CNTNT || '-').slice(0, 12);
-      });
-
-      saveTimetable(grade, cls, tt);
-      // 지금 보고 있는 화면이 이 학년/반이면 바로 갱신
-      if(ttState.grade === grade && ttState.cls === cls){
-        if(document.getElementById('timetable').classList.contains('active')) renderTimetablePage();
-        if(document.getElementById('home').classList.contains('active')) renderHomeTodayWidget();
-      }
-    }catch(e){
-      // 시간표는 학년/반 조합에 따라 조회가 안 될 수도 있으므로 조용히 기존 예시 데이터를 유지한다.
-    }
-  }
-
-  async function initNeisData(){
-    NEIS.status = 'loading';
-    NEIS.message = '혜화여자고등학교 실시간 정보를 나이스에서 불러오는 중입니다...';
-    renderNeisStatus();
-    try{
-      await neisResolveSchool();
-      await neisLoadMeals();
-      await neisLoadSchedule();
-      neisLoadTimetable(ttState.grade, ttState.cls); // 시간표는 백그라운드로 조회
-      NEIS.status = 'success';
-      NEIS.message = '혜화여자고등학교의 실시간 급식·학사일정 정보를 불러왔습니다.';
-    }catch(e){
-      NEIS.status = 'error';
-      NEIS.message = '실시간 정보를 불러오지 못했습니다 ('+e.message+'). 예시 데이터로 표시됩니다.';
-    }
-    renderNeisStatus();
-    if(document.getElementById('home').classList.contains('active')) renderHomeTodayWidget();
-    if(document.getElementById('meal').classList.contains('active')) initMealPage();
-    if(document.getElementById('schedule').classList.contains('active')){ renderCalendar(); renderExamScheduleList(); }
-  }
-
   // 초기 화면: 로그인 여부에 따라 로그인 페이지 또는 홈으로 진입
   updateAuthUI();
   goTo(currentUser ? 'home' : 'login');
-  initNeisData();
 </script>
 </body>
 </html>
